@@ -1,4 +1,4 @@
-// Copyright Nezametdinov E. Ildus 2022.
+// Copyright Nezametdinov E. Ildus 2023.
 // Distributed under the Boost Software License, Version 1.0.
 // (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
@@ -70,7 +70,8 @@ struct buffer_interface;
 ////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
-concept static_buffer = std::ranges::sized_range<T> &&
+concept static_buffer =
+    std::ranges::sized_range<T> &&
     (std::derived_from<
          T, buffer_interface<buffer_storage_normal<
                 T::static_size(), typename T::value_type, typename T::tag>>> ||
@@ -82,18 +83,17 @@ concept static_buffer = std::ranges::sized_range<T> &&
                 T::static_size(), typename T::value_type, typename T::tag>>>);
 
 template <typename T>
-concept static_buffer_reference = std::ranges::sized_range<T> &&
-    (std::derived_from<
+concept static_buffer_reference =
+    std::ranges::sized_range<T> &&
+    std::derived_from<
         T, buffer_interface<buffer_storage_reference<
-               T::static_size(), typename T::value_type, typename T::tag>>>);
+               T::static_size(), typename T::value_type, typename T::tag>>>;
 
-// clang-format off
 template <typename T>
 concept static_byte_buffer =
     static_buffer<T> &&
-    std::same_as<
-        std::remove_cv_t<std::ranges::range_value_t<T>>, unsigned char>;
-// clang-format on
+    std::same_as<std::remove_cv_t<std::ranges::range_value_t<T>>,
+                 unsigned char>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer's principal value type.
@@ -258,7 +258,9 @@ struct buffer_interface : Storage {
     static constexpr auto is_noexcept =
         std::is_nothrow_copy_constructible_v<value_type>;
 
+    ////////////////////////////////////////////////////////////////////////////
     // Accessors.
+    ////////////////////////////////////////////////////////////////////////////
 
     constexpr auto
     begin() noexcept {
@@ -310,7 +312,9 @@ struct buffer_interface : Storage {
         return static_cast<std::add_const_t<value_type>*>(this->data_);
     }
 
+    ////////////////////////////////////////////////////////////////////////////
     // Copy operations.
+    ////////////////////////////////////////////////////////////////////////////
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr void
@@ -321,24 +325,23 @@ struct buffer_interface : Storage {
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr void
-    copy_into(Buffer& x, Buffers&... rest) const noexcept(is_noexcept) requires(
-        no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
+    copy_into(Buffer& x, Buffers&... rest) const noexcept(is_noexcept)
+        requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         copy_into_<0>(x, rest...);
     }
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto&
-    fill_from(Buffer const& x, Buffers const&... rest) noexcept(
-        is_noexcept) requires(no_buffer_overflow<Offset, buffer_interface,
-                                                 Buffer, Buffers...>) {
+    fill_from(Buffer const& x, Buffers const&... rest) noexcept(is_noexcept)
+        requires(
+            no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
         return fill_from_<Offset>(x, rest...);
     }
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto&
-    fill_from(Buffer const& x, Buffers const&... rest) noexcept(
-        is_noexcept) requires(no_buffer_overflow<0, buffer_interface, Buffer,
-                                                 Buffers...>) {
+    fill_from(Buffer const& x, Buffers const&... rest) noexcept(is_noexcept)
+        requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         return fill_from_<0>(x, rest...);
     }
 
@@ -363,12 +366,14 @@ struct buffer_interface : Storage {
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    extract() const noexcept(is_noexcept) -> decltype(auto) requires(
-        is_valid_extraction<0, buffer_interface, Buffer, Buffers...>) {
+    extract() const noexcept(is_noexcept) -> decltype(auto)
+        requires(is_valid_extraction<0, buffer_interface, Buffer, Buffers...>) {
         return extract<0, Buffer, Buffers...>();
     }
 
+    ////////////////////////////////////////////////////////////////////////////
     // View operations.
+    ////////////////////////////////////////////////////////////////////////////
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
@@ -387,19 +392,21 @@ struct buffer_interface : Storage {
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() noexcept -> decltype(auto) requires(
-        no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
+    view_as() noexcept -> decltype(auto)
+        requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         return view_as<0, Buffer, Buffers...>();
     }
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() const noexcept -> decltype(auto) requires(
-        no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
+    view_as() const noexcept -> decltype(auto)
+        requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         return view_as<0, Buffer, Buffers...>();
     }
 
+    ////////////////////////////////////////////////////////////////////////////
     // Conversion operators.
+    ////////////////////////////////////////////////////////////////////////////
 
     operator mut_ref() noexcept {
         return mut_ref{data()};
@@ -409,31 +416,37 @@ struct buffer_interface : Storage {
         return ref{data()};
     }
 
+    ////////////////////////////////////////////////////////////////////////////
     // Comparison operators.
+    ////////////////////////////////////////////////////////////////////////////
 
     template <static_buffer Buffer>
     auto
-    operator<=>(Buffer const& other) const -> decltype(auto) requires(
-        are_comparable_buffers<buffer_interface, Buffer>) {
+    operator<=>(Buffer const& other) const -> decltype(auto)
+        requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return std::lexicographical_compare_three_way(
             this->begin(), this->end(), other.begin(), other.end());
     }
 
     template <static_buffer Buffer>
     auto
-    operator==(Buffer const& other) const -> decltype(auto) requires(
-        are_comparable_buffers<buffer_interface, Buffer>) {
+    operator==(Buffer const& other) const -> decltype(auto)
+        requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return std::ranges::equal(*this, other);
     }
 
     template <static_buffer Buffer>
     auto
-    operator!=(Buffer const& other) const -> decltype(auto) requires(
-        are_comparable_buffers<buffer_interface, Buffer>) {
+    operator!=(Buffer const& other) const -> decltype(auto)
+        requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return !(std::ranges::equal(*this, other));
     }
 
 private:
+    ////////////////////////////////////////////////////////////////////////////
+    // Private utility functions.
+    ////////////////////////////////////////////////////////////////////////////
+
     template <size_t Offset, typename Buffer, typename... Buffers>
     constexpr void
     copy_into_(Buffer& x, Buffers&... rest) const noexcept(is_noexcept) {
@@ -586,9 +599,8 @@ protected:
 // given buffer.
 template <size_t Chunk_size, static_buffer Buffer>
 constexpr auto
-view_buffer_by_chunks(Buffer& x) noexcept
-    -> decltype(auto) requires((Chunk_size != 0) &&
-                               ((Buffer::static_size() % Chunk_size) == 0)) {
+view_buffer_by_chunks(Buffer& x) noexcept -> decltype(auto)
+    requires((Chunk_size != 0) && ((Buffer::static_size() % Chunk_size) == 0)) {
     using view = detail::select_ref<
         Buffer,
         buffer<Chunk_size, typename Buffer::value_type, typename Buffer::tag>>;
@@ -622,14 +634,15 @@ join_buffers_secure( //
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Buffer conversion interface.
+// Buffer conversion utilities.
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
 
 // A helper concept which models any integer type, except for boolean.
 template <typename T>
-concept integer = std::integral<T> && !std::same_as<std::remove_cv_t<T>, bool>;
+concept integer = //
+    std::integral<T> && (!std::same_as<std::remove_cv_t<T>, bool>);
 
 } // namespace detail
 
@@ -645,7 +658,9 @@ template <detail::integer T, static_byte_buffer Buffer>
 constexpr auto is_valid_buffer_conversion = //
     (Buffer::static_size() == integer_size<T>);
 
-// Conversion functions.
+////////////////////////////////////////////////////////////////////////////////
+// Buffer conversion interface.
+////////////////////////////////////////////////////////////////////////////////
 
 template <detail::integer T, static_byte_buffer Buffer>
 constexpr void
@@ -671,8 +686,8 @@ constexpr void
 buffer_to_int(Buffer const& buffer, T& x) noexcept
     requires(is_valid_buffer_conversion<T, Buffer>) {
     using unsigned_type = std::make_unsigned_t<T>;
-    auto r = unsigned_type{};
 
+    auto r = unsigned_type{};
     for(size_t i = 0; i < integer_size<T>; ++i) {
         r |= static_cast<unsigned_type>(buffer[i]) << (i * CHAR_BIT);
     }
