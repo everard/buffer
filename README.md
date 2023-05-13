@@ -1,10 +1,10 @@
 # DESCRIPTION
-This repository contains a small header-only C++20 library. The main feature of
+This repository contains a small header-only C++23 library. The main feature of
 this library is safe buffer type which is similar to std::array, but has some
 compile-time-checked slice/join/view operations.
 
 # INSTALLATION
-Add the header from the `src` directory to your project. Note: A C++20-capable
+Add the header from the `src` directory to your project. Note: A C++23-capable
 compiler is required.
 
 # USAGE
@@ -32,17 +32,17 @@ This library defines the following concepts:
 * `static_buffer` - matches any kind of buffer type;
 * `static_buffer_reference` - matches any kind of buffer reference type;
 * `static_byte_buffer` - matches any kind of buffer type whose value type is
-  `unsigned char`;
+  `std::byte`;
 
 ### BUFFER REFERENCES, BUFFER VIEWING
 Buffer reference type, `buffer_reference`, behaves exactly as a normal C++
 reference, i.e. it has the same interface as the corresponding `buffer` or
-`secure_buffer` types.
+`buffer_secure` types.
 
 Its purpose is to avoid construction of temporary buffers. The
 `buffer_reference` type contains only a single pointer, so it has zero overhead
 over a normal C++ reference. In practice, the `buffer_reference` type should
-_almost never be used directly_; the `ref`/`mut_ref` templates should be used
+_almost never be used directly_; the `ref`/`ref_mut` templates should be used
 instead.
 
 Note: All function templates which create `buffer_reference`s are _always_ safe
@@ -64,7 +64,7 @@ using rose::buffer;
 using rose::ref;
 
 // Note: rose::ref<T> behaves similarly to T const&.
-// Note: rose::mut_ref<T> behaves similarly to T&.
+// Note: rose::ref_mut<T> behaves similarly to T&.
 
 using packet = buffer<256>;
 using frame = buffer<32>;
@@ -119,6 +119,18 @@ Here `chunks` is an 8-element (256 / 32 = 8) `buffer` of `buffer_reference`s,
 each having their size equal to 32. The `view_buffer_by_chunks` function
 template always checks that division does not produce a remainder: in the
 example above it checks at compile time if (256 % 32 == 0).
+
+There's another convenient function for converting `std::span`s with static
+extents to corresponding `buffer_reference`s: `span_to_buffer_ref`. Here's an
+example:
+
+```
+auto s0 = std::span<25, std::byte>{data, 25}; // Our span.
+auto b = rose::span_to_buffer_ref<rose::buffer<25>>(s0); // Mutable reference.
+
+auto s1 = std::span<25, std::byte const>{data, 25}; // Our span.
+auto c = rose::span_to_buffer_ref<rose::buffer<25>>(s1); // Constant reference.
+```
 
 ### BUFFER JOINING
 Buffers can be joined (concatenated) using the `join_buffers` and
@@ -187,8 +199,8 @@ auto [b5, b6, b7] = src.extract<21, buffer<11>, buffer<1>, buffer<2>>();
 
 ### BUFFER TO INTEGER CONVERSION
 Any integer of type `T` can be converted to/from a buffer whose value type is
-`unsigned char` and size equals to the number of bytes in value representation
-of T (which equals to `sizeof(T)` if T has no padding bytes) using the
+`std::byte` and size equals to the number of bytes in value representation of T
+(which equals to `sizeof(T)` if T has no padding bytes) using the
 `int_to_buffer` and `buffer_to_int` non-member function templates:
 
 ```
@@ -212,17 +224,17 @@ buffer_to_int(b1, k);
 ### BUFFER TAG TYPES
 Here's an example from cryptography of when _tag types_ can be useful. Let's say
 we have two key types: one for stream cipher and another one for MAC (message
-authentication code). Both are buffers of `unsigned char`s of size 32:
+authentication code). Both are buffers of `std::byte`s of size 32:
 
 ```
 using rose::buffer_secure;
 
-using cipher_key = buffer_secure<32, unsigned char>;
-using mac_key = buffer_secure<32, unsigned char>;
+using cipher_key = buffer_secure<32, std::byte>;
+using mac_key = buffer_secure<32, std::byte>;
 ```
 
 But this two types are in realty the same, i.e.
-`buffer_secure<32, unsigned char>`, and using one key in place of the other is
+`buffer_secure<32, std::byte>`, and using one key in place of the other is
 totally fine from compiler's point of view, while actually doing so is usually
 an error.
 
@@ -232,8 +244,8 @@ Tag types for the rescue:
 struct cipher_key_tag {};
 struct mac_key_tag {};
 
-using cipher_key = buffer_secure<32, unsigned char, cipher_key_tag>;
-using mac_key = buffer_secure<32, unsigned char, mac_key_tag>;
+using cipher_key = buffer_secure<32, std::byte, cipher_key_tag>;
+using mac_key = buffer_secure<32, std::byte, mac_key_tag>;
 ```
 
 Now, `cipher_key` and `mac_key` are different types, and compiler will catch the
@@ -251,7 +263,7 @@ compute_mac(ref<mac_key> k);
 ```
 
 # LICENSE
-Copyright Nezametdinov E. Ildus 2022.
+Copyright Nezametdinov E. Ildus 2023.
 Distributed under the Boost Software License, Version 1.0.
 (See accompanying file LICENSE_1_0.txt or copy at
 https://www.boost.org/LICENSE_1_0.txt)

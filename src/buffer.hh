@@ -6,28 +6,20 @@
 #ifndef H_639425CCA60E448B9BEB43186E06CA57
 #define H_639425CCA60E448B9BEB43186E06CA57
 
-#include <algorithm>
-#include <concepts>
-#include <ranges>
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include <climits>
-#include <cstddef>
+#include <algorithm>
 #include <limits>
+#include <ranges>
 
 #include <span>
 #include <tuple>
-
 #include <type_traits>
 #include <utility>
 
 namespace rose {
-
-////////////////////////////////////////////////////////////////////////////////
-// Standard integer type definitions.
-////////////////////////////////////////////////////////////////////////////////
-
-using std::ptrdiff_t;
-using std::size_t;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Compile-time addition interface of values of unsigned type. Generates
@@ -94,8 +86,7 @@ concept static_buffer_reference =
 template <typename T>
 concept static_byte_buffer =
     static_buffer<T> &&
-    std::same_as<std::remove_cv_t<std::ranges::range_value_t<T>>,
-                 unsigned char>;
+    std::same_as<std::remove_cv_t<std::ranges::range_value_t<T>>, std::byte>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer principal value type definition.
@@ -173,7 +164,10 @@ constexpr auto is_valid_extraction =
     (are_valid_extraction_target<Buffer_dst0, Buffers_dst...> &&
      no_buffer_overflow<Offset, Buffer_src, Buffer_dst0, Buffers_dst...>);
 
-// Compound size of the given buffer types.
+////////////////////////////////////////////////////////////////////////////////
+// Compound size computation interface of the given buffer types.
+////////////////////////////////////////////////////////////////////////////////
+
 template <static_buffer Buffer, static_buffer... Buffers>
 constexpr auto compound_size =
     ((sizeof...(Buffers) == 0)
@@ -199,10 +193,10 @@ using tag_compound =
 // Buffer definitions.
 ////////////////////////////////////////////////////////////////////////////////
 
-template <size_t N, typename T = unsigned char, typename Tag = tag_default>
+template <size_t N, typename T = std::byte, typename Tag = tag_default>
 using buffer = buffer_interface<buffer_storage_normal<N, T, Tag>>;
 
-template <size_t N, typename T = unsigned char, typename Tag = tag_default>
+template <size_t N, typename T = std::byte, typename Tag = tag_default>
 using buffer_secure = buffer_interface<buffer_storage_secure<N, T, Tag>>;
 
 template <static_buffer Buffer, static_buffer... Buffers>
@@ -219,16 +213,17 @@ using buffer_compound_secure =
 // Buffer reference definitions.
 ////////////////////////////////////////////////////////////////////////////////
 
-template <size_t N, typename T = unsigned char, typename Tag = tag_default>
+template <size_t N, typename T, typename Tag>
 using buffer_reference = buffer_interface<buffer_storage_reference<N, T, Tag>>;
 
 template <static_buffer T>
-using mut_ref =
+using ref_mut =
     buffer_reference<T::static_size(), typename T::value_type, typename T::tag>;
 
 template <static_buffer T>
-using ref = buffer_reference<T::static_size(), typename T::value_type const,
-                             typename T::tag>;
+using ref = //
+    buffer_reference<T::static_size(), typename T::value_type const,
+                     typename T::tag>;
 
 namespace detail {
 
@@ -236,7 +231,7 @@ template <static_buffer Buffer_src, static_buffer Buffer_dst>
 using select_ref =
     std::conditional_t<(std::is_const_v<Buffer_src> ||
                         std::is_const_v<typename Buffer_src::value_type>),
-                       ref<Buffer_dst>, mut_ref<Buffer_dst>>;
+                       ref<Buffer_dst>, ref_mut<Buffer_dst>>;
 
 } // namespace detail
 
@@ -252,13 +247,6 @@ struct buffer_interface : Storage {
 
     using value_type = typename Storage::value_type;
     using tag = typename Storage::tag;
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Corresponding buffer reference definitions.
-    ////////////////////////////////////////////////////////////////////////////
-
-    using mut_ref = buffer_reference<Storage::static_size, value_type, tag>;
-    using ref = buffer_reference<Storage::static_size, value_type const, tag>;
 
     ////////////////////////////////////////////////////////////////////////////
     // Constants.
@@ -318,7 +306,7 @@ struct buffer_interface : Storage {
 
     constexpr auto
     data() const noexcept {
-        return static_cast<std::add_const_t<value_type>*>(this->data_);
+        return static_cast<value_type const*>(this->data_);
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -388,17 +376,15 @@ struct buffer_interface : Storage {
     constexpr auto
     view_as() noexcept -> decltype(auto) requires(
         no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
-        return this->view_as_<Offset, buffer_interface, Buffer, Buffers...>(
-            *this);
+        return view_as_<Offset, buffer_interface, Buffer, Buffers...>(*this);
     }
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
     view_as() const noexcept -> decltype(auto) requires(
         no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
-        return this
-            ->view_as_<Offset, buffer_interface const, Buffer, Buffers...>(
-                *this);
+        return view_as_<Offset, buffer_interface const, Buffer, Buffers...>(
+            *this);
     }
 
     template <static_buffer Buffer, static_buffer... Buffers>
@@ -419,21 +405,23 @@ struct buffer_interface : Storage {
     // Conversion operators.
     ////////////////////////////////////////////////////////////////////////////
 
-    operator mut_ref() noexcept {
+    constexpr
+    operator buffer_reference<static_size(), value_type, tag>() noexcept {
         return {this->data()};
     }
 
-    operator ref() const noexcept {
-        return {this->data()};
-    }
-
-    operator std::span<value_type, Storage::static_size>() noexcept {
-        return {this->data(), this->size()};
-    }
-
-    operator std::span<std::add_const_t<value_type>, Storage::static_size>()
+    constexpr operator buffer_reference<static_size(), value_type const, tag>()
         const noexcept {
-        return {this->data(), this->size()};
+        return {this->data()};
+    }
+
+    constexpr operator std::span<value_type, static_size()>() noexcept {
+        return std::span<value_type, static_size()>{*this};
+    }
+
+    constexpr operator std::span<value_type const, static_size()>()
+        const noexcept {
+        return std::span<value_type const, static_size()>{*this};
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -441,7 +429,7 @@ struct buffer_interface : Storage {
     ////////////////////////////////////////////////////////////////////////////
 
     template <static_buffer Buffer>
-    auto
+    constexpr auto
     operator<=>(Buffer const& other) const -> decltype(auto)
         requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return std::lexicographical_compare_three_way(
@@ -449,14 +437,14 @@ struct buffer_interface : Storage {
     }
 
     template <static_buffer Buffer>
-    auto
+    constexpr auto
     operator==(Buffer const& other) const -> decltype(auto)
         requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return std::ranges::equal(*this, other);
     }
 
     template <static_buffer Buffer>
-    auto
+    constexpr auto
     operator!=(Buffer const& other) const -> decltype(auto)
         requires(are_comparable_buffers<buffer_interface, Buffer>) {
         return !(std::ranges::equal(*this, other));
@@ -665,11 +653,18 @@ protected:
     // Construction/destruction.
     ////////////////////////////////////////////////////////////////////////////
 
-    buffer_storage_reference() noexcept : data_{} {
+    constexpr buffer_storage_reference(T* x = nullptr) noexcept : data_{x} {
     }
 
-    buffer_storage_reference(T* x) noexcept : data_{x} {
-    }
+    ////////////////////////////////////////////////////////////////////////////
+    // Friend declarations.
+    ////////////////////////////////////////////////////////////////////////////
+
+    template <static_buffer Buffer>
+    friend constexpr auto
+    span_to_buffer_ref(
+        std::span<typename Buffer::value_type, Buffer::static_size()>
+            x) noexcept -> ref_mut<Buffer>;
 
     template <typename Storage>
     friend struct buffer_interface;
@@ -701,6 +696,7 @@ view_buffer_by_chunks(Buffer& x) noexcept -> decltype(auto)
     })(std::make_index_sequence<Buffer::static_size() / Chunk_size>{});
 }
 
+// Joins the given buffers into one compound buffer.
 template <static_buffer Buffer, static_buffer... Buffers>
 constexpr auto
 join_buffers( //
@@ -712,6 +708,7 @@ join_buffers( //
     return r;
 }
 
+// Joins the given buffers into one secure compound buffer.
 template <static_buffer Buffer, static_buffer... Buffers>
 constexpr auto
 join_buffers_secure( //
@@ -731,7 +728,7 @@ namespace detail {
 
 // A helper concept which models any integer type, except for boolean.
 template <typename T>
-concept integer = //
+concept integer =
     std::integral<T> && (!std::same_as<std::remove_cv_t<T>, bool>);
 
 } // namespace detail
@@ -745,23 +742,34 @@ constexpr auto integer_size = static_sum<
 // A predicate which shows that an object of the given integer type can be
 // converted to/from an object of the buffer type.
 template <detail::integer T, static_byte_buffer Buffer>
-constexpr auto is_valid_buffer_conversion = //
+constexpr auto is_valid_buffer_conversion =
     (Buffer::static_size() == integer_size<T>);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer conversion interface.
 ////////////////////////////////////////////////////////////////////////////////
 
+// Converts the given span to the corresponding buffer reference.
+template <static_buffer Buffer>
+constexpr auto
+span_to_buffer_ref(
+    std::span<typename Buffer::value_type, Buffer::static_size()> x) noexcept
+    -> ref_mut<Buffer> {
+    return {x.data()};
+}
+
+// Writes the given integer to the given byte buffer.
 template <detail::integer T, static_byte_buffer Buffer>
 constexpr void
 int_to_buffer(T x, Buffer& buffer) noexcept
     requires(is_valid_buffer_conversion<T, Buffer>) {
     for(size_t i = 0; i < integer_size<T>; ++i) {
-        buffer[i] = static_cast<unsigned char>(
+        buffer[i] = static_cast<std::byte>(
             static_cast<std::make_unsigned_t<T>>(x) >> (i * CHAR_BIT));
     }
 }
 
+// Converts the given integer to a byte buffer.
 template <detail::integer T>
 constexpr auto
 int_to_buffer(T x) noexcept -> decltype(auto) {
@@ -771,6 +779,7 @@ int_to_buffer(T x) noexcept -> decltype(auto) {
     return r;
 }
 
+// Reads an integer of the given type from the given byte buffer.
 template <detail::integer T, static_byte_buffer Buffer>
 constexpr void
 buffer_to_int(Buffer const& buffer, T& x) noexcept
@@ -785,6 +794,7 @@ buffer_to_int(Buffer const& buffer, T& x) noexcept
     x = static_cast<T>(r);
 }
 
+// Converts the given byte buffer to an integer of the given type.
 template <detail::integer T, static_byte_buffer Buffer>
 constexpr auto
 buffer_to_int(Buffer const& buffer) noexcept -> T
@@ -793,31 +803,6 @@ buffer_to_int(Buffer const& buffer) noexcept -> T
     buffer_to_int(buffer, r);
 
     return r;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Byte sequence definitions.
-////////////////////////////////////////////////////////////////////////////////
-
-using byte_sequence = std::span<unsigned char const>;
-using byte_sequence_mutable = std::span<unsigned char>;
-
-////////////////////////////////////////////////////////////////////////////////
-// Byte sequence construction interface.
-////////////////////////////////////////////////////////////////////////////////
-
-template <typename T, size_t N>
-constexpr auto
-as_byte_sequence_mutable(std::span<T, N> span) -> byte_sequence_mutable {
-    return byte_sequence_mutable{
-        reinterpret_cast<unsigned char*>(span.data()), span.size_bytes()};
-}
-
-template <typename T, size_t N>
-constexpr auto
-as_byte_sequence(std::span<T, N> span) -> byte_sequence {
-    return byte_sequence{
-        reinterpret_cast<unsigned char const*>(span.data()), span.size_bytes()};
 }
 
 } // namespace rose
