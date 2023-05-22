@@ -3,23 +3,22 @@
 // (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 //
-#ifndef H_639425CCA60E448B9BEB43186E06CA57
-#define H_639425CCA60E448B9BEB43186E06CA57
-
-#include <limits.h>
-#include <stddef.h>
-#include <stdint.h>
+module; // Note: In the near future this will be replaced by import declaration.
 
 #include <algorithm>
 #include <limits>
 #include <ranges>
+
+#include <stddef.h>
+#include <stdint.h>
 
 #include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-namespace rose {
+export module rose.buffer;
+export namespace rose {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Compile-time addition interface of values of unsigned type. Generates
@@ -532,7 +531,7 @@ struct buffer_storage_normal {
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
 
-    static constexpr size_t static_size = N;
+    static constexpr auto static_size = N;
 
     ////////////////////////////////////////////////////////////////////////////
     // Value and tag type definitions.
@@ -554,7 +553,7 @@ struct buffer_storage_normal<0, T, Tag> {
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
 
-    static constexpr size_t static_size = 0;
+    static constexpr auto static_size = 0zU;
 
     ////////////////////////////////////////////////////////////////////////////
     // Value and tag type definitions.
@@ -581,7 +580,7 @@ struct buffer_storage_secure {
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
 
-    static constexpr size_t static_size = N;
+    static constexpr auto static_size = N;
 
     ////////////////////////////////////////////////////////////////////////////
     // Value and tag type definitions.
@@ -612,7 +611,7 @@ struct buffer_storage_secure<0, T, Tag> {
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
 
-    static constexpr size_t static_size = 0;
+    static constexpr auto static_size = 0zU;
 
     ////////////////////////////////////////////////////////////////////////////
     // Value and tag type definitions.
@@ -639,7 +638,7 @@ struct buffer_storage_reference {
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
 
-    static constexpr size_t static_size = N;
+    static constexpr auto static_size = N;
 
     ////////////////////////////////////////////////////////////////////////////
     // Value and tag type definitions.
@@ -731,13 +730,19 @@ template <typename T>
 concept integer =
     std::integral<T> && (!std::same_as<std::remove_cv_t<T>, bool>);
 
+// Number of bits in byte.
+constexpr inline auto byte_width =
+    static_cast<size_t>(std::numeric_limits<unsigned char>::digits);
+
 } // namespace detail
 
 // Size of integer type's value representation.
 template <detail::integer T>
-constexpr auto integer_size = static_sum<
-    ((std::numeric_limits<std::make_unsigned_t<T>>::digits / CHAR_BIT)),
-    ((std::numeric_limits<std::make_unsigned_t<T>>::digits % CHAR_BIT) != 0)>;
+constexpr auto integer_size =
+    static_sum<((std::numeric_limits<std::make_unsigned_t<T>>::digits /
+                 detail::byte_width)),
+               ((std::numeric_limits<std::make_unsigned_t<T>>::digits %
+                 detail::byte_width) != 0)>;
 
 // A predicate which shows that an object of the given integer type can be
 // converted to/from an object of the buffer type.
@@ -763,9 +768,11 @@ template <detail::integer T, static_byte_buffer Buffer>
 constexpr void
 int_to_buffer(T x, Buffer& buffer) noexcept
     requires(is_valid_buffer_conversion<T, Buffer>) {
-    for(size_t i = 0; i < integer_size<T>; ++i) {
-        buffer[i] = static_cast<std::byte>(
-            static_cast<std::make_unsigned_t<T>>(x) >> (i * CHAR_BIT));
+    auto y = static_cast<std::make_unsigned_t<T>>(x);
+
+    // Note: Little-endian.
+    for(auto i = 0zU; i < integer_size<T>; ++i) {
+        buffer[i] = static_cast<std::byte>(y >> (i * detail::byte_width));
     }
 }
 
@@ -787,8 +794,8 @@ buffer_to_int(Buffer const& buffer, T& x) noexcept
     using unsigned_type = std::make_unsigned_t<T>;
 
     auto r = unsigned_type{};
-    for(size_t i = 0; i < integer_size<T>; ++i) {
-        r |= static_cast<unsigned_type>(buffer[i]) << (i * CHAR_BIT);
+    for(auto i = 0zU; i < integer_size<T>; ++i) {
+        r |= static_cast<unsigned_type>(buffer[i]) << (i * detail::byte_width);
     }
 
     x = static_cast<T>(r);
@@ -806,5 +813,3 @@ buffer_to_int(Buffer const& buffer) noexcept -> T
 }
 
 } // namespace rose
-
-#endif // H_639425CCA60E448B9BEB43186E06CA57

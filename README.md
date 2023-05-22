@@ -1,11 +1,11 @@
 # DESCRIPTION
-This repository contains a small header-only C++23 library. The main feature of
-this library is safe buffer type which is similar to std::array, but has some
-compile-time-checked slice/join/view operations.
+This repository contains a small C++23 library. The main feature of this library
+is safe buffer type which is similar to std::array, but has some compile-time
+checked slice/join/view operations.
 
 # INSTALLATION
-Add the header from the `src` directory to your project. Note: A C++23-capable
-compiler is required.
+Add the source file from the `src` directory to your project. Note: A C++23-capable
+compiler is required, C++ modules support is required.
 
 # USAGE
 ## BUFFER
@@ -58,8 +58,7 @@ The following code shows how this can be done using this library's type-safe
 buffer interface.
 
 ```
-#include "buffer.hh"
-
+import rose.buffer;
 using rose::buffer;
 using rose::ref;
 
