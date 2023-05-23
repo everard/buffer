@@ -29,7 +29,8 @@ namespace detail {
 
 template <std::unsigned_integral T, T X, T Y, T... Rest>
 constexpr auto
-static_add() noexcept -> T requires(static_cast<T>(X + Y) >= Y) {
+static_add() noexcept -> T
+    requires(static_cast<T>(X + Y) >= Y) {
     if constexpr(sizeof...(Rest) == 0) {
         return (X + Y);
     } else {
@@ -43,6 +44,18 @@ template <size_t X, size_t Y, size_t... Rest>
 constexpr auto static_sum = detail::static_add<size_t, X, Y, Rest...>();
 
 ////////////////////////////////////////////////////////////////////////////////
+// Type manipulation utilities.
+////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+template <typename T, typename... Rest>
+using multiple =
+    std::conditional_t<(sizeof...(Rest) == 0), T, std::tuple<T, Rest...>>;
+
+} // namespace detail
+
+////////////////////////////////////////////////////////////////////////////////
 // Forward declarations of buffer interface and buffer storages.
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -50,7 +63,7 @@ template <typename Storage>
 struct buffer_interface;
 
 template <size_t N, typename T, typename Tag>
-struct buffer_storage_normal;
+struct buffer_storage;
 
 template <size_t N, typename T, typename Tag>
 struct buffer_storage_secure;
@@ -66,7 +79,7 @@ template <typename T>
 concept static_buffer =
     std::ranges::sized_range<T> &&
     (std::derived_from<
-         T, buffer_interface<buffer_storage_normal<
+         T, buffer_interface<buffer_storage<
                 T::static_size(), typename T::value_type, typename T::tag>>> ||
      std::derived_from<
          T, buffer_interface<buffer_storage_secure<
@@ -179,21 +192,16 @@ constexpr auto compound_size =
 
 struct tag_default {};
 
-template <typename T>
-struct tag_wrapped {};
-
 template <static_buffer Buffer, static_buffer... Buffers>
 using tag_compound =
-    std::conditional_t<(sizeof...(Buffers) == 0), typename Buffer::tag,
-                       std::tuple<tag_wrapped<typename Buffer::tag>,
-                                  tag_wrapped<typename Buffers::tag>...>>;
+    detail::multiple<typename Buffer::tag, typename Buffers::tag...>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer definitions.
 ////////////////////////////////////////////////////////////////////////////////
 
 template <size_t N, typename T = std::byte, typename Tag = tag_default>
-using buffer = buffer_interface<buffer_storage_normal<N, T, Tag>>;
+using buffer = buffer_interface<buffer_storage<N, T, Tag>>;
 
 template <size_t N, typename T = std::byte, typename Tag = tag_default>
 using buffer_secure = buffer_interface<buffer_storage_secure<N, T, Tag>>;
@@ -224,15 +232,11 @@ using ref = //
     buffer_reference<T::static_size(), typename T::value_type const,
                      typename T::tag>;
 
-namespace detail {
-
 template <static_buffer Buffer_src, static_buffer Buffer_dst>
 using select_ref =
     std::conditional_t<(std::is_const_v<Buffer_src> ||
                         std::is_const_v<typename Buffer_src::value_type>),
                        ref<Buffer_dst>, ref_mut<Buffer_dst>>;
-
-} // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer interface definition.
@@ -314,8 +318,9 @@ struct buffer_interface : Storage {
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr void
-    copy_into(Buffer& x, Buffers&... rest) const noexcept(is_noexcept) requires(
-        no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
+    copy_into(Buffer& x, Buffers&... rest) const noexcept(is_noexcept)
+        requires(
+            no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
         this->copy_into_<Offset>(x, rest...);
     }
 
@@ -343,13 +348,10 @@ struct buffer_interface : Storage {
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    extract() const noexcept(is_noexcept) -> decltype(auto) requires(
-        is_valid_extraction<Offset, buffer_interface, Buffer, Buffers...>) {
-        using result = //
-            std::conditional_t<(sizeof...(Buffers) == 0), Buffer,
-                               std::tuple<Buffer, Buffers...>>;
-
-        result r;
+    extract() const noexcept(is_noexcept)
+        requires(
+            is_valid_extraction<Offset, buffer_interface, Buffer, Buffers...>) {
+        detail::multiple<Buffer, Buffers...> r;
 
         if constexpr(sizeof...(Buffers) == 0) {
             this->copy_into_<Offset>(r);
@@ -362,7 +364,7 @@ struct buffer_interface : Storage {
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    extract() const noexcept(is_noexcept) -> decltype(auto)
+    extract() const noexcept(is_noexcept)
         requires(is_valid_extraction<0, buffer_interface, Buffer, Buffers...>) {
         return this->extract<0, Buffer, Buffers...>();
     }
@@ -373,29 +375,31 @@ struct buffer_interface : Storage {
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() noexcept -> decltype(auto) requires(
-        no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
+    view_as() noexcept
+        requires(
+            no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
         return view_as_<Offset, buffer_interface, Buffer, Buffers...>(*this);
     }
 
     template <size_t Offset, static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() const noexcept -> decltype(auto) requires(
-        no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
-        return view_as_<Offset, buffer_interface const, Buffer, Buffers...>(
-            *this);
+    view_as() const noexcept
+        requires(
+            no_buffer_overflow<Offset, buffer_interface, Buffer, Buffers...>) {
+        return //
+            view_as_<Offset, buffer_interface const, Buffer, Buffers...>(*this);
     }
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() noexcept -> decltype(auto)
+    view_as() noexcept
         requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         return this->view_as<0, Buffer, Buffers...>();
     }
 
     template <static_buffer Buffer, static_buffer... Buffers>
     constexpr auto
-    view_as() const noexcept -> decltype(auto)
+    view_as() const noexcept
         requires(no_buffer_overflow<0, buffer_interface, Buffer, Buffers...>) {
         return this->view_as<0, Buffer, Buffers...>();
     }
@@ -404,49 +408,25 @@ struct buffer_interface : Storage {
     // Conversion operators.
     ////////////////////////////////////////////////////////////////////////////
 
-    constexpr
+    constexpr //
     operator buffer_reference<static_size(), value_type, tag>() noexcept {
         return {this->data()};
     }
 
-    constexpr operator buffer_reference<static_size(), value_type const, tag>()
+    constexpr //
+    operator buffer_reference<static_size(), value_type const, tag>()
         const noexcept {
         return {this->data()};
     }
 
-    constexpr operator std::span<value_type, static_size()>() noexcept {
+    constexpr //
+    operator std::span<value_type, static_size()>() noexcept {
         return std::span<value_type, static_size()>{*this};
     }
 
-    constexpr operator std::span<value_type const, static_size()>()
-        const noexcept {
+    constexpr //
+    operator std::span<value_type const, static_size()>() const noexcept {
         return std::span<value_type const, static_size()>{*this};
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Comparison operators.
-    ////////////////////////////////////////////////////////////////////////////
-
-    template <static_buffer Buffer>
-    constexpr auto
-    operator<=>(Buffer const& other) const -> decltype(auto)
-        requires(are_comparable_buffers<buffer_interface, Buffer>) {
-        return std::lexicographical_compare_three_way(
-            this->begin(), this->end(), other.begin(), other.end());
-    }
-
-    template <static_buffer Buffer>
-    constexpr auto
-    operator==(Buffer const& other) const -> decltype(auto)
-        requires(are_comparable_buffers<buffer_interface, Buffer>) {
-        return std::ranges::equal(*this, other);
-    }
-
-    template <static_buffer Buffer>
-    constexpr auto
-    operator!=(Buffer const& other) const -> decltype(auto)
-        requires(are_comparable_buffers<buffer_interface, Buffer>) {
-        return !(std::ranges::equal(*this, other));
     }
 
 private:
@@ -479,18 +459,18 @@ private:
     template <size_t Offset, typename Buffer_src, typename Buffer_dst0,
               typename... Buffers_dst>
     static constexpr auto
-    view_as_(Buffer_src& self) noexcept -> decltype(auto) {
-        if constexpr(sizeof...(Buffers_dst) == 0) {
-            return detail::select_ref<Buffer_src, Buffer_dst0>{self.data() +
-                                                               Offset};
-        } else {
-            auto r =
-                std::tuple<detail::select_ref<Buffer_src, Buffer_dst0>,
-                           detail::select_ref<Buffer_src, Buffers_dst>...>{};
+    view_as_(Buffer_src& self) noexcept {
+        auto r = //
+            detail::multiple<select_ref<Buffer_src, Buffer_dst0>,
+                             select_ref<Buffer_src, Buffers_dst>...>{};
 
+        if constexpr(sizeof...(Buffers_dst) == 0) {
+            r.data_ = self.data() + Offset;
+        } else {
             view_as_tuple_<Offset, 0>(self, r);
-            return r;
         }
+
+        return r;
     }
 
     template <size_t Offset, size_t I, typename Tuple>
@@ -522,11 +502,11 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Buffer normal storage definition.
+// Buffer storage definition.
 ////////////////////////////////////////////////////////////////////////////////
 
 template <size_t N, typename T, typename Tag>
-struct buffer_storage_normal {
+struct buffer_storage {
     ////////////////////////////////////////////////////////////////////////////
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
@@ -548,7 +528,7 @@ struct buffer_storage_normal {
 };
 
 template <typename T, typename Tag>
-struct buffer_storage_normal<0, T, Tag> {
+struct buffer_storage<0, T, Tag> {
     ////////////////////////////////////////////////////////////////////////////
     // Constants.
     ////////////////////////////////////////////////////////////////////////////
@@ -683,15 +663,15 @@ protected:
 // given buffer.
 template <size_t Chunk_size, static_buffer Buffer>
 constexpr auto
-view_buffer_by_chunks(Buffer& x) noexcept -> decltype(auto)
+view_buffer_by_chunks(Buffer& x) noexcept
     requires((Chunk_size != 0) && ((Buffer::static_size() % Chunk_size) == 0)) {
-    using view = detail::select_ref<
-        Buffer,
-        buffer<Chunk_size, typename Buffer::value_type, typename Buffer::tag>>;
+    using view_type =
+        select_ref<Buffer, buffer<Chunk_size, typename Buffer::value_type,
+                                  typename Buffer::tag>>;
 
     return ([&x]<size_t... Indices>(std::index_sequence<Indices...>) {
-        return buffer<sizeof...(Indices), view>{
-            x.template view_as<Indices * Chunk_size, view>()...};
+        return buffer<sizeof...(Indices), view_type>{
+            x.template view_as<Indices * Chunk_size, view_type>()...};
     })(std::make_index_sequence<Buffer::static_size() / Chunk_size>{});
 }
 
@@ -699,24 +679,18 @@ view_buffer_by_chunks(Buffer& x) noexcept -> decltype(auto)
 template <static_buffer Buffer, static_buffer... Buffers>
 constexpr auto
 join_buffers( //
-    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept)
-    -> decltype(auto) {
+    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept) {
     buffer_compound<Buffer, Buffers...> r;
-    r.fill_from(x, rest...);
-
-    return r;
+    return r.fill_from(x, rest...);
 }
 
 // Joins the given buffers into one secure compound buffer.
 template <static_buffer Buffer, static_buffer... Buffers>
 constexpr auto
 join_buffers_secure( //
-    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept)
-    -> decltype(auto) {
+    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept) {
     buffer_compound_secure<Buffer, Buffers...> r;
-    r.fill_from(x, rest...);
-
-    return r;
+    return r.fill_from(x, rest...);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -730,19 +704,17 @@ template <typename T>
 concept integer =
     std::integral<T> && (!std::same_as<std::remove_cv_t<T>, bool>);
 
+} // namespace detail
+
 // Number of bits in byte.
 constexpr inline auto byte_width =
     static_cast<size_t>(std::numeric_limits<unsigned char>::digits);
 
-} // namespace detail
-
 // Size of integer type's value representation.
 template <detail::integer T>
-constexpr auto integer_size =
-    static_sum<((std::numeric_limits<std::make_unsigned_t<T>>::digits /
-                 detail::byte_width)),
-               ((std::numeric_limits<std::make_unsigned_t<T>>::digits %
-                 detail::byte_width) != 0)>;
+constexpr auto integer_size = static_sum<
+    ((std::numeric_limits<std::make_unsigned_t<T>>::digits / byte_width)),
+    ((std::numeric_limits<std::make_unsigned_t<T>>::digits % byte_width) != 0)>;
 
 // A predicate which shows that an object of the given integer type can be
 // converted to/from an object of the buffer type.
@@ -772,14 +744,14 @@ int_to_buffer(T x, Buffer& buffer) noexcept
 
     // Note: Little-endian.
     for(auto i = 0zU; i < integer_size<T>; ++i) {
-        buffer[i] = static_cast<std::byte>(y >> (i * detail::byte_width));
+        buffer[i] = static_cast<std::byte>(y >> (i * byte_width));
     }
 }
 
 // Converts the given integer to a byte buffer.
 template <detail::integer T>
 constexpr auto
-int_to_buffer(T x) noexcept -> decltype(auto) {
+int_to_buffer(T x) noexcept {
     buffer<integer_size<T>> r;
     int_to_buffer(x, r);
 
@@ -795,7 +767,7 @@ buffer_to_int(Buffer const& buffer, T& x) noexcept
 
     auto r = unsigned_type{};
     for(auto i = 0zU; i < integer_size<T>; ++i) {
-        r |= static_cast<unsigned_type>(buffer[i]) << (i * detail::byte_width);
+        r |= static_cast<unsigned_type>(buffer[i]) << (i * byte_width);
     }
 
     x = static_cast<T>(r);
