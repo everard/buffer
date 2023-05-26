@@ -3,7 +3,7 @@
 // (See accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 //
-module; // Note: In the near future this will be replaced by import declaration.
+module; // Global module fragment.
 
 #include <algorithm>
 #include <limits>
@@ -177,16 +177,6 @@ constexpr auto is_valid_extraction =
      no_buffer_overflow<Offset, Buffer_src, Buffer_dst0, Buffers_dst...>);
 
 ////////////////////////////////////////////////////////////////////////////////
-// Compound size computation interface of the given buffer types.
-////////////////////////////////////////////////////////////////////////////////
-
-template <static_buffer Buffer, static_buffer... Buffers>
-constexpr auto compound_size =
-    ((sizeof...(Buffers) == 0)
-         ? Buffer::static_size()
-         : static_sum<Buffer::static_size(), Buffers::static_size()...>);
-
-////////////////////////////////////////////////////////////////////////////////
 // Tag type definitions.
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -205,16 +195,6 @@ using buffer = buffer_interface<buffer_storage<N, T, Tag>>;
 
 template <size_t N, typename T = std::byte, typename Tag = tag_default>
 using buffer_secure = buffer_interface<buffer_storage_secure<N, T, Tag>>;
-
-template <static_buffer Buffer, static_buffer... Buffers>
-using buffer_compound =
-    buffer<compound_size<Buffer, Buffers...>, buffer_value_type<Buffer>,
-           tag_compound<Buffer, Buffers...>>;
-
-template <static_buffer Buffer, static_buffer... Buffers>
-using buffer_compound_secure =
-    buffer_secure<compound_size<Buffer, Buffers...>, buffer_value_type<Buffer>,
-                  tag_compound<Buffer, Buffers...>>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Buffer reference definitions.
@@ -573,7 +553,7 @@ struct buffer_storage_secure {
     // Construction/destruction.
     ////////////////////////////////////////////////////////////////////////////
 
-    ~buffer_storage_secure() {
+    inline ~buffer_storage_secure() {
         auto volatile ptr = this->data_;
         std::fill_n(ptr, N, T{});
     }
@@ -627,7 +607,7 @@ struct buffer_storage_reference {
     using value_type = T;
     using tag = Tag;
 
-protected:
+private:
     ////////////////////////////////////////////////////////////////////////////
     // Construction/destruction.
     ////////////////////////////////////////////////////////////////////////////
@@ -676,21 +656,41 @@ view_buffer_by_chunks(Buffer& x) noexcept
 }
 
 // Joins the given buffers into one compound buffer.
-template <static_buffer Buffer, static_buffer... Buffers>
+template <static_buffer Buffer0, static_buffer Buffer1,
+          static_buffer... Buffers>
 constexpr auto
-join_buffers( //
-    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept) {
-    buffer_compound<Buffer, Buffers...> r;
-    return r.fill_from(x, rest...);
+join_buffers(Buffer0 const& x, Buffer1 const& y,
+             Buffers const&... rest) noexcept(Buffer0::is_noexcept)
+    requires(are_homogeneous_buffers<Buffer0, Buffer1, Buffers...>) {
+    using result_type =
+        buffer<static_sum<Buffer0::static_size(), Buffer1::static_size(),
+                          Buffers::static_size()...>,
+               buffer_value_type<Buffer0>,
+               tag_compound<Buffer0, Buffer1, Buffers...>>;
+
+    result_type r;
+    r.fill_from(x, y, rest...);
+
+    return r;
 }
 
 // Joins the given buffers into one secure compound buffer.
-template <static_buffer Buffer, static_buffer... Buffers>
+template <static_buffer Buffer0, static_buffer Buffer1,
+          static_buffer... Buffers>
 constexpr auto
-join_buffers_secure( //
-    Buffer const& x, Buffers const&... rest) noexcept(Buffer::is_noexcept) {
-    buffer_compound_secure<Buffer, Buffers...> r;
-    return r.fill_from(x, rest...);
+join_buffers_secure(Buffer0 const& x, Buffer1 const& y,
+                    Buffers const&... rest) noexcept(Buffer0::is_noexcept)
+    requires(are_homogeneous_buffers<Buffer0, Buffer1, Buffers...>) {
+    using result_type =
+        buffer_secure<static_sum<Buffer0::static_size(), Buffer1::static_size(),
+                                 Buffers::static_size()...>,
+                      buffer_value_type<Buffer0>,
+                      tag_compound<Buffer0, Buffer1, Buffers...>>;
+
+    result_type r;
+    r.fill_from(x, y, rest...);
+
+    return r;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
