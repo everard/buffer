@@ -607,6 +607,34 @@ struct buffer_storage_reference {
     using value_type = T;
     using tag = Tag;
 
+    ////////////////////////////////////////////////////////////////////////////
+    // Copy/move construction.
+    ////////////////////////////////////////////////////////////////////////////
+
+    constexpr buffer_storage_reference(
+        buffer_storage_reference const& other) noexcept
+        : data_{other.data_} {
+    }
+
+    constexpr buffer_storage_reference(
+        buffer_storage_reference&& other) noexcept
+        : data_{other.data_} {
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Assignment operators.
+    ////////////////////////////////////////////////////////////////////////////
+
+    constexpr auto&
+    operator=(buffer_storage_reference other) noexcept(
+        std::is_nothrow_copy_constructible_v<value_type>) {
+        if(this->data_ != other.data_) {
+            std::copy_n(other.data_, static_size, this->data_);
+        }
+
+        return *this;
+    }
+
 private:
     ////////////////////////////////////////////////////////////////////////////
     // Construction/destruction.
